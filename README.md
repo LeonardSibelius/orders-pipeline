@@ -51,7 +51,7 @@
 docker compose up -d --wait
 
 # 2. Run the pipeline (blocks until SIGTERM)
-mvn camel:run
+./mvnw camel:run
 ```
 
 Within ~2 seconds the three seed orders flow to Kafka. Inspect a running app via:
@@ -84,7 +84,7 @@ psql -h localhost -U orders -d orders \
      -c "INSERT INTO orders (customer_id, amount, currency)
          VALUES ('cust-bad', 1.00, 'USD')"
 
-# Watch retry logs from mvn camel:run (3× with 2s backoff)
+# Watch retry logs from ./mvnw camel:run (3× with 2s backoff)
 docker compose start redpanda
 # Message lands; row flips to SENT
 ```

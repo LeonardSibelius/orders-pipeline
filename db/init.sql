@@ -20,7 +20,7 @@ CREATE TABLE orders (
 CREATE INDEX orders_new_created_at_idx ON orders (created_at)
     WHERE status = 'NEW';
 
--- Seed rows so `mvn camel:run` produces visible Kafka traffic immediately.
+-- Seed rows so `./mvnw camel:run` produces visible Kafka traffic immediately.
 INSERT INTO orders (customer_id, amount, currency) VALUES
     ('cust-001', 49.99,  'USD'),
     ('cust-002', 129.50, 'EUR'),
