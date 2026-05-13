@@ -2,6 +2,8 @@ target/
 *.class
 *.jar
 *.war
+# but keep the Maven wrapper itself
+!.mvn/wrapper/maven-wrapper.jar
 
 # IDEs
 .idea/
