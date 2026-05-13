@@ -18,7 +18,6 @@ public class OrderEnricher {
                 String.valueOf(row.get("customer_id")),
                 toBigDecimal(row.get("amount")),
                 String.valueOf(row.get("currency")),
-                String.valueOf(row.get("status")),
                 toInstant(row.get("created_at")),
                 Instant.now(),
                 SOURCE_SYSTEM);

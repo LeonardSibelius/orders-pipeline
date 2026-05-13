@@ -8,7 +8,6 @@ public record OrderEvent(
         String customerId,
         BigDecimal amount,
         String currency,
-        String status,
         Instant createdAt,
         Instant processedAt,
         String sourceSystem) {
