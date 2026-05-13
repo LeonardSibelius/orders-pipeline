@@ -21,7 +21,7 @@ public class OrderSyncRoute extends RouteBuilder {
                 .maximumRedeliveries(3)
                 .redeliveryDelay(2000));
 
-        from("sql:classpath:sql/select-new-orders.sql"
+        from("sql:classpath:sql/claim-new-orders.sql"
                 + "?dataSource=#ordersDataSource"
                 + "&delay=2000"
                 + "&onConsume=RAW(" + markSent + ")"
