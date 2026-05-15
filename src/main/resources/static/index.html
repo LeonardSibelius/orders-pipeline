@@ -29,6 +29,28 @@
         </div>
     </section>
 
+    <section>
+        <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-3">recent activity</h2>
+        <div hx-get="/api/recent" hx-trigger="load, every 2s" hx-swap="innerHTML">
+            <div class="text-slate-500 text-sm">loading…</div>
+        </div>
+    </section>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <section>
+            <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-3">dead letter queue</h2>
+            <div hx-get="/api/dlq-size" hx-trigger="load, every 2s" hx-swap="innerHTML">
+                <div class="text-slate-500 text-sm">loading…</div>
+            </div>
+        </section>
+        <section>
+            <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-3">stuck rows</h2>
+            <div hx-get="/api/stuck" hx-trigger="load, every 2s" hx-swap="innerHTML">
+                <div class="text-slate-500 text-sm">loading…</div>
+            </div>
+        </section>
+    </div>
+
 </main>
 
 </body>

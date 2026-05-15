@@ -5,8 +5,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
+import io.github.leonardsibelius.orders.dashboard.DashboardRenderer;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 
@@ -32,41 +32,55 @@ public class DashboardRoute extends RouteBuilder {
                 .to("sql:classpath:sql/dashboard-stats.sql?dataSource=#ordersDataSource")
                 .process(DashboardRoute::renderStats)
                 .setHeader(Exchange.CONTENT_TYPE, constant(CONTENT_TYPE_HTML));
+
+        // GET /api/recent -- HTML table of the 10 most recent orders.
+        from("platform-http:/api/recent?httpMethodRestrict=GET")
+                .routeId("dashboard-api-recent")
+                .to("sql:classpath:sql/dashboard-recent.sql?dataSource=#ordersDataSource")
+                .process(DashboardRoute::renderRecent)
+                .setHeader(Exchange.CONTENT_TYPE, constant(CONTENT_TYPE_HTML));
+
+        // GET /api/dlq-size -- HTML fragment with the orders.dlq message count.
+        from("platform-http:/api/dlq-size?httpMethodRestrict=GET")
+                .routeId("dashboard-api-dlq-size")
+                .setBody(constant("orders.dlq"))
+                .bean("kafkaTopicStats", "messagesIn")
+                .process(DashboardRoute::renderDlqSize)
+                .setHeader(Exchange.CONTENT_TYPE, constant(CONTENT_TYPE_HTML));
+
+        // GET /api/stuck -- HTML fragment, red banner if any IN_PROGRESS rows
+        //                  are older than five minutes.
+        from("platform-http:/api/stuck?httpMethodRestrict=GET")
+                .routeId("dashboard-api-stuck")
+                .to("sql:classpath:sql/dashboard-stuck.sql?dataSource=#ordersDataSource")
+                .process(DashboardRoute::renderStuck)
+                .setHeader(Exchange.CONTENT_TYPE, constant(CONTENT_TYPE_HTML));
     }
 
+    // Bridge methods: pull typed inputs out of the exchange, delegate HTML
+    // generation to DashboardRenderer (pure, no Camel types in its API).
+
+    @SuppressWarnings("unchecked")
     private static void renderStats(Exchange exchange) {
-        @SuppressWarnings("unchecked")
         List<Map<String, Object>> rows = exchange.getMessage().getBody(List.class);
-        Map<String, Long> counts = rows == null ? Map.of() : rows.stream().collect(Collectors.toMap(
-                r -> String.valueOf(r.get("status")),
-                r -> ((Number) r.get("n")).longValue()));
+        exchange.getMessage().setBody(DashboardRenderer.stats(rows));
+    }
 
-        String html = """
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div class="rounded-lg border border-slate-700 bg-slate-800/60 p-4">
-                    <div class="text-xs uppercase tracking-wider text-blue-400">New</div>
-                    <div class="text-3xl font-semibold text-slate-100 mt-1">%d</div>
-                  </div>
-                  <div class="rounded-lg border border-slate-700 bg-slate-800/60 p-4">
-                    <div class="text-xs uppercase tracking-wider text-amber-400">In progress</div>
-                    <div class="text-3xl font-semibold text-slate-100 mt-1">%d</div>
-                  </div>
-                  <div class="rounded-lg border border-slate-700 bg-slate-800/60 p-4">
-                    <div class="text-xs uppercase tracking-wider text-emerald-400">Sent</div>
-                    <div class="text-3xl font-semibold text-slate-100 mt-1">%d</div>
-                  </div>
-                  <div class="rounded-lg border border-slate-700 bg-slate-800/60 p-4">
-                    <div class="text-xs uppercase tracking-wider text-rose-400">Error</div>
-                    <div class="text-3xl font-semibold text-slate-100 mt-1">%d</div>
-                  </div>
-                </div>
-                """.formatted(
-                        counts.getOrDefault("NEW", 0L),
-                        counts.getOrDefault("IN_PROGRESS", 0L),
-                        counts.getOrDefault("SENT", 0L),
-                        counts.getOrDefault("ERROR", 0L));
+    @SuppressWarnings("unchecked")
+    private static void renderRecent(Exchange exchange) {
+        List<Map<String, Object>> rows = exchange.getMessage().getBody(List.class);
+        exchange.getMessage().setBody(DashboardRenderer.recent(rows));
+    }
 
-        exchange.getMessage().setBody(html);
+    private static void renderDlqSize(Exchange exchange) {
+        long count = exchange.getMessage().getBody(Long.class);
+        exchange.getMessage().setBody(DashboardRenderer.dlqSize(count));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void renderStuck(Exchange exchange) {
+        List<Map<String, Object>> rows = exchange.getMessage().getBody(List.class);
+        exchange.getMessage().setBody(DashboardRenderer.stuck(rows));
     }
 
     private static String loadResource(String classpathResource) throws IOException {
