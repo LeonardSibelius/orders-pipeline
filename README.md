@@ -79,14 +79,26 @@ kcat -b localhost:9092 -t orders.new -C -o end -f '%k → %s\n'
 ### Failure-path smoke test
 
 ```bash
+# 1. Take the broker down, then add an order
 docker compose stop redpanda
 psql -h localhost -U orders -d orders \
      -c "INSERT INTO orders (customer_id, amount, currency)
          VALUES ('cust-bad', 1.00, 'USD')"
 
-# Watch retry logs from ./mvnw camel:run (3× with 2s backoff)
+# The route claims the row; the publish to orders.new fails fast (~5s),
+# retries 3× with 2s backoff, the DLQ write to orders.dlq also fails,
+# and onConsumeFailed marks the row ERROR -- recoverable, not lost:
+psql -h localhost -U orders -d orders \
+     -c "SELECT id, status FROM orders WHERE customer_id = 'cust-bad'"
+#  -> status = ERROR
+
+# 2. Bring the broker back and requeue the row
+#    (this manual UPDATE is what the planned v1.1 reaper will automate)
 docker compose start redpanda
-# Message lands; row flips to SENT
+psql -h localhost -U orders -d orders \
+     -c "UPDATE orders SET status='NEW', claimed_at=NULL, errored_at=NULL
+         WHERE customer_id = 'cust-bad' AND status = 'ERROR'"
+# Within one ~2s poll cycle it flows through to orders.new and SENT.
 ```
 
 ## Design notes
@@ -101,7 +113,9 @@ A plain `SELECT … FOR UPDATE SKIP LOCKED` is multi-instance safe only if the S
 
 ### DLQ-first error handling
 
-The route-level `errorHandler(deadLetterChannel(...))` retries transient failures 3× with 2s backoff, then sends the **original** (pre-marshal) message to `orders.dlq`. By default `deadLetterChannel` marks the exchange as handled, so `camel-sql`'s `onConsume` fires for both happy-path *and* DLQ-path completions — rows always flip to `SENT`. The DLQ topic is where downstream investigation happens, not Postgres. `onConsumeFailed` (mark `ERROR`) is reserved for the rare catastrophe where the DLQ produce itself fails.
+The route-level `errorHandler(deadLetterChannel(...))` retries transient failures 3× with 2s backoff, then routes the failed exchange to `orders.dlq`. When that DLQ write **succeeds**, `deadLetterChannel` marks the exchange handled, so `camel-sql`'s `onConsume` fires and the row flips to `SENT` — the DLQ topic, not Postgres, is where downstream investigation happens.
+
+When the broker is *fully* unavailable the DLQ write fails too. `.deadLetterHandleNewException(false)` makes that second failure propagate instead of being swallowed, so `camel-sql` runs `onConsumeFailed` and the row is marked `ERROR` — recoverable by requeuing it to `NEW`, never silently `SENT` while the event was lost. Kafka producer timeouts are tuned short (`delivery-timeout-ms=10s`) so this path resolves in seconds rather than minutes.
 
 ### Why `OrderEvent` doesn't carry `status`
 
