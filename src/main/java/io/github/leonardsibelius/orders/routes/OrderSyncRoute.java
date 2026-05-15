@@ -24,7 +24,13 @@ public class OrderSyncRoute extends RouteBuilder {
         JsonDataFormat orderEventJson = new JsonDataFormat(JsonLibrary.Jackson);
         orderEventJson.setObjectMapper("objectMapper");
 
+        // deadLetterHandleNewException(false): if the DLQ write itself fails
+        // (e.g. the broker is fully down), do NOT swallow that failure. Let it
+        // propagate so the SQL consumer runs onConsumeFailed and the row is
+        // marked ERROR -- recoverable -- instead of being marked SENT by
+        // onConsume while the message was never delivered anywhere.
         errorHandler(deadLetterChannel("kafka:orders.dlq")
+                .deadLetterHandleNewException(false)
                 .maximumRedeliveries(3)
                 .redeliveryDelay(2000));
 
