@@ -9,8 +9,6 @@ import java.util.Map;
 
 import javax.sql.DataSource;
 
-import org.apache.camel.BeanInject;
-import org.apache.camel.BindToRegistry;
 import org.apache.camel.CamelContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,15 +21,24 @@ import org.slf4j.LoggerFactory;
  * <p>Each probe is bounded in time (HikariCP enforces connection-timeout
  * on getConnection; KafkaTopicStats applies a 2s admin timeout) so a single
  * unhealthy dependency cannot stall the /api/health endpoint.
+ *
+ * <p>Constructed via {@code PipelineConfiguration#healthChecker(...)} so
+ * its dependencies are resolved in factory-method order rather than via
+ * post-construction field injection (which races with classpath scan order).
  */
-@BindToRegistry("healthChecker")
 public class HealthChecker {
 
     private static final Logger LOG = LoggerFactory.getLogger(HealthChecker.class);
 
-    @BeanInject private DataSource ordersDataSource;
-    @BeanInject private KafkaTopicStats kafkaTopicStats;
-    @BeanInject private CamelContext camelContext;
+    private final DataSource dataSource;
+    private final KafkaTopicStats kafkaTopicStats;
+    private final CamelContext camelContext;
+
+    public HealthChecker(DataSource dataSource, KafkaTopicStats kafkaTopicStats, CamelContext camelContext) {
+        this.dataSource = dataSource;
+        this.kafkaTopicStats = kafkaTopicStats;
+        this.camelContext = camelContext;
+    }
 
     public Map<String, Boolean> check() {
         Map<String, Boolean> m = new LinkedHashMap<>();
@@ -42,7 +49,7 @@ public class HealthChecker {
     }
 
     private boolean pingPostgres() {
-        try (Connection c = ordersDataSource.getConnection();
+        try (Connection c = dataSource.getConnection();
              Statement s = c.createStatement();
              ResultSet r = s.executeQuery("SELECT 1")) {
             return r.next();

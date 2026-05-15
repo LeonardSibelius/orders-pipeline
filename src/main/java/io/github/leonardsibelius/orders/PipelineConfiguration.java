@@ -7,8 +7,11 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import io.github.leonardsibelius.orders.dashboard.HealthChecker;
 import io.github.leonardsibelius.orders.dashboard.KafkaTopicStats;
+import org.apache.camel.BeanInject;
 import org.apache.camel.BindToRegistry;
+import org.apache.camel.CamelContext;
 import org.apache.camel.Configuration;
 import org.apache.camel.PropertyInject;
 
@@ -42,5 +45,13 @@ public class PipelineConfiguration {
     public KafkaTopicStats kafkaTopicStats(
             @PropertyInject("camel.component.kafka.brokers") String bootstrapServers) {
         return new KafkaTopicStats(bootstrapServers);
+    }
+
+    @BindToRegistry("healthChecker")
+    public HealthChecker healthChecker(
+            @BeanInject("ordersDataSource") DataSource dataSource,
+            @BeanInject("kafkaTopicStats") KafkaTopicStats kafkaTopicStats,
+            CamelContext camelContext) {
+        return new HealthChecker(dataSource, kafkaTopicStats, camelContext);
     }
 }
