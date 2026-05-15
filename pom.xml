@@ -17,6 +17,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <camel.version>4.10.0</camel.version>
+        <jackson.version>2.18.2</jackson.version>
         <postgresql.version>42.7.4</postgresql.version>
         <hikaricp.version>5.1.0</hikaricp.version>
         <log4j2.version>2.24.1</log4j2.version>
@@ -28,6 +29,16 @@
                 <groupId>org.apache.camel</groupId>
                 <artifactId>camel-bom</artifactId>
                 <version>${camel.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Aligns all Jackson artifacts (including jackson-datatype-jsr310,
+                 which camel-bom does not manage) to the version camel-jackson
+                 4.10 pulls transitively. -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -71,6 +82,11 @@
         <dependency>
             <groupId>org.apache.camel</groupId>
             <artifactId>camel-jackson</artifactId>
+        </dependency>
+        <!-- Java 8 date/time support for Jackson; OrderEvent uses Instant -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
 
         <!-- Observability: dev console, health, JMX-over-HTTP, CLI attach -->
