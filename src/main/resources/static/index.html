@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>orders-pipeline · operator dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen antialiased">
+
+<header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]" aria-label="live"></span>
+            <h1 class="text-lg font-semibold tracking-tight text-slate-100">orders-pipeline</h1>
+            <span class="text-xs text-slate-500 hidden sm:inline">operator dashboard</span>
+        </div>
+        <div class="text-xs text-slate-500">refreshing every 2s</div>
+    </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+    <section>
+        <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-3">orders by status</h2>
+        <div hx-get="/api/stats" hx-trigger="load, every 2s" hx-swap="innerHTML">
+            <div class="text-slate-500 text-sm">loading…</div>
+        </div>
+    </section>
+
+</main>
+
+</body>
+</html>
