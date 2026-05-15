@@ -101,6 +101,23 @@ psql -h localhost -U orders -d orders \
 # Within one ~2s poll cycle it flows through to orders.new and SENT.
 ```
 
+## Dashboard
+
+Open <http://localhost:8080/dashboard> once `mvn camel:run` is up. A single-page HTMX + Tailwind dashboard polls the live system every two seconds:
+
+- **State counts** — large counters for `NEW` / `IN_PROGRESS` / `SENT` / `ERROR`.
+- **Recent activity** — the ten most recent orders with status badge and journey duration (`1.2s ✓`, `5m 12s ✗`, `in-flight 3s ago`).
+- **Dead letter queue** — message count for `orders.dlq`.
+- **System health** — green/red dots for Postgres, Kafka, and the Camel context (every route in `Started`).
+- **Stuck rows** — a red banner when one or more `IN_PROGRESS` rows are older than five minutes, with the manual-recovery `UPDATE` shown inline (the v1.2 reaper will automate it).
+
+The header carries a live `updated HH:MM:SS` stamp that refreshes after every HTMX swap — proof of life beyond the counters.
+
+<!-- TODO: capture a screenshot from a running instance and commit it as docs/dashboard.png -->
+![operator dashboard](docs/dashboard.png)
+
+No build step: HTMX 1.9 and Tailwind both load via CDN. All API endpoints (`/api/stats`, `/api/recent`, `/api/dlq-size`, `/api/stuck`, `/api/health`) return HTML fragments rendered by `DashboardRoute` and `DashboardRenderer` — same camel-main process, no separate front-end app, no JSON-to-DOM glue.
+
 ## Design notes
 
 ### Why `camel-main`, not Spring Boot?
@@ -165,19 +182,29 @@ orders-pipeline/
 └── src/main/
     ├── java/io/github/leonardsibelius/orders/
     │   ├── PipelineApplication.java     # camel-main bootstrap
-    │   ├── PipelineConfiguration.java   # @BindToRegistry: DataSource + ObjectMapper
+    │   ├── PipelineConfiguration.java   # @BindToRegistry: DataSource, ObjectMapper, kafkaTopicStats
     │   ├── routes/
-    │   │   └── OrderSyncRoute.java      # the pipeline route
-    │   └── transform/
-    │       ├── OrderEvent.java          # Kafka payload (Java 17 record)
-    │       └── OrderEnricher.java       # Map<String,Object> → OrderEvent
+    │   │   ├── OrderSyncRoute.java      # the pipeline route
+    │   │   └── DashboardRoute.java      # /dashboard + /api/* endpoints
+    │   ├── transform/
+    │   │   ├── OrderEvent.java          # Kafka payload (Java 17 record)
+    │   │   └── OrderEnricher.java       # Map<String,Object> → OrderEvent
+    │   └── dashboard/
+    │       ├── DashboardRenderer.java   # pure HTML-fragment functions
+    │       ├── KafkaTopicStats.java     # AdminClient wrapper (DLQ size + reachability)
+    │       └── HealthChecker.java       # Postgres + Kafka + Camel reachability
     └── resources/
         ├── application.properties       # all runtime config
         ├── log4j2.properties            # logging
+        ├── static/
+        │   └── index.html               # HTMX + Tailwind dashboard SPA
         └── sql/
             ├── claim-new-orders.sql     # UPDATE…RETURNING atomic claim
             ├── mark-order-sent.sql      # onConsume:       IN_PROGRESS → SENT
-            └── mark-order-failed.sql    # onConsumeFailed: IN_PROGRESS → ERROR
+            ├── mark-order-failed.sql    # onConsumeFailed: IN_PROGRESS → ERROR
+            ├── dashboard-stats.sql      # counts by status
+            ├── dashboard-recent.sql     # 10 most recent orders
+            └── dashboard-stuck.sql      # count of stuck IN_PROGRESS rows
 ```
 
 ## License
