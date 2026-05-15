@@ -93,7 +93,7 @@ psql -h localhost -U orders -d orders \
 #  -> status = ERROR
 
 # 2. Bring the broker back and requeue the row
-#    (this manual UPDATE is what the planned v1.1 reaper will automate)
+#    (this manual UPDATE is what the planned v1.2 reaper will automate)
 docker compose start redpanda
 psql -h localhost -U orders -d orders \
      -c "UPDATE orders SET status='NEW', claimed_at=NULL, errored_at=NULL
@@ -130,7 +130,7 @@ INSERT  ───►  │  NEW   │  ──────────► │ IN_P
                   ▲                          │
                   │                          │ onConsumeFailed
    stuck-row      │                          │ (catastrophe)
-   reaper (v1.1)  │                          ▼
+   reaper (v1.2)  │                          ▼
                   │                     ┌─────────┐
                   └─────────────────────│  ERROR  │
                                         └─────────┘
@@ -138,7 +138,7 @@ INSERT  ───►  │  NEW   │  ──────────► │ IN_P
 
 ## v1 known limits
 
-- **Stuck-`IN_PROGRESS` rows on consumer crash.** If a pipeline instance dies between claiming rows and the route completing, those rows stay `IN_PROGRESS` until manually reset. A reaper that resets rows whose `claimed_at` is older than ~5 minutes is the planned **v1.1** commit.
+- **Stuck-`IN_PROGRESS` rows on consumer crash.** If a pipeline instance dies between claiming rows and the route completing, those rows stay `IN_PROGRESS` until manually reset. A reaper that resets rows whose `claimed_at` is older than ~5 minutes is the planned **v1.2** commit.
 - **JSON payload.** Friendly for `kcat` debugging, less friendly for schema evolution. **v2.0** swaps to Avro + Confluent Schema Registry.
 - **No metrics export.** Camel's dev console gives runtime introspection; Micrometer + Prometheus is a **v2.1** candidate.
 
@@ -147,7 +147,8 @@ INSERT  ───►  │  NEW   │  ──────────► │ IN_P
 | Tag  | Change                                       | Why                                                |
 |------|----------------------------------------------|----------------------------------------------------|
 | v1.0 | *(this)* — working end-to-end on JSON        | Show the canonical shape of a `camel-main` pipeline |
-| v1.1 | Stuck-`IN_PROGRESS` reaper route             | Recover from consumer crashes without manual fix   |
+| v1.1 | Operator dashboard (HTMX + Tailwind)         | At-a-glance pipeline state, served by camel-main from the same JVM |
+| v1.2 | Stuck-`IN_PROGRESS` reaper route             | Recover from consumer crashes without manual fix   |
 | v2.0 | Avro + Confluent Schema Registry             | Schema-evolution discipline on the wire format     |
 | v2.1 | Micrometer metrics + Grafana dashboard       | Per-route latency / throughput / DLQ-rate panels   |
 
