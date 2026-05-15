@@ -55,6 +55,14 @@ public class DashboardRoute extends RouteBuilder {
                 .to("sql:classpath:sql/dashboard-stuck.sql?dataSource=#ordersDataSource")
                 .process(DashboardRoute::renderStuck)
                 .setHeader(Exchange.CONTENT_TYPE, constant(CONTENT_TYPE_HTML));
+
+        // GET /api/health -- HTML fragment with reachability indicators for
+        //                   Postgres, Kafka, and the Camel context itself.
+        from("platform-http:/api/health?httpMethodRestrict=GET")
+                .routeId("dashboard-api-health")
+                .bean("healthChecker", "check")
+                .process(DashboardRoute::renderHealth)
+                .setHeader(Exchange.CONTENT_TYPE, constant(CONTENT_TYPE_HTML));
     }
 
     // Bridge methods: pull typed inputs out of the exchange, delegate HTML
@@ -81,6 +89,12 @@ public class DashboardRoute extends RouteBuilder {
     private static void renderStuck(Exchange exchange) {
         List<Map<String, Object>> rows = exchange.getMessage().getBody(List.class);
         exchange.getMessage().setBody(DashboardRenderer.stuck(rows));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void renderHealth(Exchange exchange) {
+        Map<String, Boolean> health = exchange.getMessage().getBody(Map.class);
+        exchange.getMessage().setBody(DashboardRenderer.health(health));
     }
 
     private static String loadResource(String classpathResource) throws IOException {

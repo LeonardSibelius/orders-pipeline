@@ -16,7 +16,7 @@
             <h1 class="text-lg font-semibold tracking-tight text-slate-100">orders-pipeline</h1>
             <span class="text-xs text-slate-500 hidden sm:inline">operator dashboard</span>
         </div>
-        <div class="text-xs text-slate-500">refreshing every 2s</div>
+        <div class="text-xs text-slate-500" id="last-refresh">awaiting first refresh…</div>
     </div>
 </header>
 
@@ -44,14 +44,30 @@
             </div>
         </section>
         <section>
-            <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-3">stuck rows</h2>
-            <div hx-get="/api/stuck" hx-trigger="load, every 2s" hx-swap="innerHTML">
+            <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-3">system health</h2>
+            <div hx-get="/api/health" hx-trigger="load, every 2s" hx-swap="innerHTML">
                 <div class="text-slate-500 text-sm">loading…</div>
             </div>
         </section>
     </div>
 
+    <section>
+        <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-3">stuck rows</h2>
+        <div hx-get="/api/stuck" hx-trigger="load, every 2s" hx-swap="innerHTML">
+            <div class="text-slate-500 text-sm">loading…</div>
+        </div>
+    </section>
+
 </main>
+
+<script>
+    // Update the header's last-refresh timestamp after every HTMX swap, so
+    // the operator can tell at a glance that the page is alive.
+    document.body.addEventListener('htmx:afterSwap', function () {
+        document.getElementById('last-refresh').textContent =
+            'updated ' + new Date().toLocaleTimeString();
+    });
+</script>
 
 </body>
 </html>

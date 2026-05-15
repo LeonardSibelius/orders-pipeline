@@ -137,6 +137,32 @@ public final class DashboardRenderer {
                 """.formatted(count);
     }
 
+    public static String health(Map<String, Boolean> health) {
+        return """
+                <div class="rounded-lg border border-slate-700 bg-slate-800/60 p-4">
+                  <div class="text-xs uppercase tracking-wider text-slate-400 mb-3">system health</div>
+                  <div class="flex flex-wrap gap-6 text-sm">
+                %s%s%s  </div>
+                </div>
+                """.formatted(
+                        indicator("Postgres", health.getOrDefault("postgres", false)),
+                        indicator("Kafka", health.getOrDefault("kafka", false)),
+                        indicator("Camel", health.getOrDefault("camel", false)));
+    }
+
+    private static String indicator(String label, boolean ok) {
+        String dotClass = ok
+                ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]"
+                : "bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.6)]";
+        String textClass = ok ? "text-emerald-300" : "text-rose-300";
+        return """
+                    <div class="flex items-center gap-2 %s">
+                      <span class="inline-block w-2 h-2 rounded-full %s"></span>
+                      <span>%s</span>
+                    </div>
+                """.formatted(textClass, dotClass, escape(label));
+    }
+
     // ---------------------- helpers ----------------------
 
     private static String statusBadge(String status) {

@@ -36,6 +36,20 @@ public class KafkaTopicStats implements Closeable {
         this.admin = AdminClient.create(props);
     }
 
+    /**
+     * Cheap reachability probe: asks the broker for its cluster id. Returns
+     * false on timeout or any failure. Used by the dashboard's system-health
+     * panel.
+     */
+    public boolean isReachable() {
+        try {
+            admin.describeCluster().clusterId().get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public long messagesIn(String topic) {
         try {
             var partitions = admin.describeTopics(List.of(topic))
