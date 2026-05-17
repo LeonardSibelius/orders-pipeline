@@ -93,7 +93,7 @@ psql -h localhost -U orders -d orders \
 #  -> status = ERROR
 
 # 2. Bring the broker back and requeue the row
-#    (this manual UPDATE is what the planned v1.2 reaper will automate)
+#    (the v1.2 reaper now automates this -- see the "Operational" section)
 docker compose start redpanda
 psql -h localhost -U orders -d orders \
      -c "UPDATE orders SET status='NEW', claimed_at=NULL, errored_at=NULL
@@ -109,7 +109,7 @@ Open <http://localhost:8080/dashboard> once `mvn camel:run` is up. A single-page
 - **Recent activity** — the ten most recent orders with status badge and journey duration (`1.2s ✓`, `5m 12s ✗`, `in-flight 3s ago`).
 - **Dead letter queue** — message count for `orders.dlq`.
 - **System health** — green/red dots for Postgres, Kafka, and the Camel context (every route in `Started`).
-- **Stuck rows** — a red banner when one or more `IN_PROGRESS` rows are older than five minutes, with the manual-recovery `UPDATE` shown inline (the v1.2 reaper will automate it).
+- **Stuck rows** — a red banner when one or more `IN_PROGRESS` rows are older than five minutes. The reaper (see "Operational") will normally drain these automatically; the banner gives the operator visibility while it does so.
 
 The header carries a live `updated HH:MM:SS` stamp that refreshes after every HTMX swap — proof of life beyond the counters.
 
@@ -117,6 +117,32 @@ The header carries a live `updated HH:MM:SS` stamp that refreshes after every HT
 ![operator dashboard](docs/dashboard.png)
 
 No build step: HTMX 1.9 and Tailwind both load via CDN. All API endpoints (`/api/stats`, `/api/recent`, `/api/dlq-size`, `/api/stuck`, `/api/health`) return HTML fragments rendered by `DashboardRoute` and `DashboardRenderer` — same camel-main process, no separate front-end app, no JSON-to-DOM glue.
+
+## Operational
+
+### Stuck-row reaper
+
+The pipeline owns its recovery story. A timer-driven [`ReaperRoute`](src/main/java/io/github/leonardsibelius/orders/routes/ReaperRoute.java) ticks every `reaper.interval-ms` (default **60 s**) and finds rows in `IN_PROGRESS` whose `claimed_at` is older than `reaper.stuck-after-seconds` (default **300 s** / 5 min). For each such row it does one of two things:
+
+- **Reclaim** (the common case): `UPDATE … SET status='NEW', claimed_at=NULL, claim_count = claim_count + 1`. The SQL consumer's next poll picks the row up normally. A WARN is logged with the order id, the seconds it was stuck, and the new `claim_count`.
+- **Poison** (when `claim_count + 1 > reaper.max-claims`, default **5**): `UPDATE … SET status='ERROR', errored_at=NOW(), error_reason='stuck-too-many-times', claim_count = claim_count + 1`. Prevents an infinite reclaim loop on a row that genuinely never publishes — the dashboard's stuck-rows panel surfaces it for human attention.
+
+The choice between reclaim and poison is a typed Java predicate (`ReaperRoute#isPoison`), not a Simple-language string comparison — checked at compile time, not at runtime. Each UPDATE includes an `AND status='IN_PROGRESS'` guard so the reaper no-ops cleanly if another actor (a parallel reaper, the SQL consumer, or a human via psql) changed the row between SELECT and UPDATE.
+
+A 10-second `reaper.initial-delay-ms` defers the first tick so any pre-existing `NEW` rows at startup get claimed through the regular pipeline first.
+
+| Config knob | Default | What it controls |
+|---|---|---|
+| `reaper.interval-ms` | `60000` | Timer period between reaper ticks |
+| `reaper.initial-delay-ms` | `10000` | Delay before the first tick after startup |
+| `reaper.stuck-after-seconds` | `300` | How long a row must sit `IN_PROGRESS` before the reaper considers it stuck |
+| `reaper.max-claims` | `5` | Reclaim attempts allowed before the row is marked `ERROR` |
+
+### Testing the reaper
+
+When scripting a smoke test for the reaper, your watchdog timeout must be **at least one full `reaper.interval-ms`** (plus a small buffer for the SELECT + UPDATE roundtrip). With the default `60000`, allow ~70 seconds of wait per stuck row.
+
+The reclaim after a stick can land *up to one full tick later* — not immediately — because the previous tick may have fired (and found nothing) milliseconds before you stuck the row. A watchdog timeout shorter than one tick will report "no reclaim" while the system is actually working correctly. Learned this the hard way during the v1.2 smoke test.
 
 ## Design notes
 
@@ -147,27 +173,27 @@ INSERT  ───►  │  NEW   │  ──────────► │ IN_P
                   ▲                          │
                   │                          │ onConsumeFailed
    stuck-row      │                          │ (catastrophe)
-   reaper (v1.2)  │                          ▼
+   reaper         │                          ▼
                   │                     ┌─────────┐
                   └─────────────────────│  ERROR  │
                                         └─────────┘
 ```
 
-## v1 known limits
+## Known limits
 
-- **Stuck-`IN_PROGRESS` rows on consumer crash.** If a pipeline instance dies between claiming rows and the route completing, those rows stay `IN_PROGRESS` until manually reset. A reaper that resets rows whose `claimed_at` is older than ~5 minutes is the planned **v1.2** commit.
 - **JSON payload.** Friendly for `kcat` debugging, less friendly for schema evolution. **v2.0** swaps to Avro + Confluent Schema Registry.
 - **No metrics export.** Camel's dev console gives runtime introspection; Micrometer + Prometheus is a **v2.1** candidate.
+- **Schema changes via `init.sql` only.** New columns land by folding into `db/init.sql` and recreating the Postgres container (`docker compose down && up`). Real migration tooling (Flyway / Liquibase) is a v2.x concern.
 
 ## Roadmap
 
 | Tag  | Change                                       | Why                                                |
 |------|----------------------------------------------|----------------------------------------------------|
-| v1.0 | *(this)* — working end-to-end on JSON        | Show the canonical shape of a `camel-main` pipeline |
-| v1.1 | Operator dashboard (HTMX + Tailwind)         | At-a-glance pipeline state, served by camel-main from the same JVM |
-| v1.2 | Stuck-`IN_PROGRESS` reaper route             | Recover from consumer crashes without manual fix   |
-| v2.0 | Avro + Confluent Schema Registry             | Schema-evolution discipline on the wire format     |
-| v2.1 | Micrometer metrics + Grafana dashboard       | Per-route latency / throughput / DLQ-rate panels   |
+| v1.0 ✓ | Working end-to-end on JSON                 | The canonical shape of a `camel-main` pipeline     |
+| v1.1 ✓ | Operator dashboard (HTMX + Tailwind)       | At-a-glance pipeline state, served by camel-main from the same JVM |
+| v1.2 ✓ | Stuck-`IN_PROGRESS` reaper route           | Recover from consumer crashes without manual fix   |
+| v2.0   | Avro + Confluent Schema Registry           | Schema-evolution discipline on the wire format     |
+| v2.1   | Micrometer metrics + Grafana dashboard     | Per-route latency / throughput / DLQ-rate panels   |
 
 The git history is intentionally narrative — each tag above will be its own series of small commits that show why the change was needed.
 
@@ -185,7 +211,8 @@ orders-pipeline/
     │   ├── PipelineConfiguration.java   # @BindToRegistry: DataSource, ObjectMapper, kafkaTopicStats
     │   ├── routes/
     │   │   ├── OrderSyncRoute.java      # the pipeline route
-    │   │   └── DashboardRoute.java      # /dashboard + /api/* endpoints
+    │   │   ├── DashboardRoute.java      # /dashboard + /api/* endpoints
+    │   │   └── ReaperRoute.java         # stuck-row reaper (v1.2)
     │   ├── transform/
     │   │   ├── OrderEvent.java          # Kafka payload (Java 17 record)
     │   │   └── OrderEnricher.java       # Map<String,Object> → OrderEvent
@@ -204,7 +231,10 @@ orders-pipeline/
             ├── mark-order-failed.sql    # onConsumeFailed: IN_PROGRESS → ERROR
             ├── dashboard-stats.sql      # counts by status
             ├── dashboard-recent.sql     # 10 most recent orders
-            └── dashboard-stuck.sql      # count of stuck IN_PROGRESS rows
+            ├── dashboard-stuck.sql      # count of stuck IN_PROGRESS rows
+            ├── reaper-find-stuck.sql    # SELECT stuck rows + how long
+            ├── reaper-reclaim.sql       # UPDATE: stuck IN_PROGRESS → NEW
+            └── reaper-mark-poison.sql   # UPDATE: stuck → ERROR (max-claims exceeded)
 ```
 
 ## License

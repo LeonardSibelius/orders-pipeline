@@ -2,15 +2,20 @@
 -- at /docker-entrypoint-initdb.d/01-init.sql and executed on first start.
 
 CREATE TABLE orders (
-    id          BIGSERIAL PRIMARY KEY,
-    customer_id TEXT          NOT NULL,
-    amount      NUMERIC(12,2) NOT NULL,
-    currency    CHAR(3)       NOT NULL,
-    status      TEXT          NOT NULL DEFAULT 'NEW',
-    created_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    claimed_at  TIMESTAMPTZ,
-    sent_at     TIMESTAMPTZ,
-    errored_at  TIMESTAMPTZ,
+    id           BIGSERIAL PRIMARY KEY,
+    customer_id  TEXT          NOT NULL,
+    amount       NUMERIC(12,2) NOT NULL,
+    currency     CHAR(3)       NOT NULL,
+    status       TEXT          NOT NULL DEFAULT 'NEW',
+    created_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    claimed_at   TIMESTAMPTZ,
+    sent_at      TIMESTAMPTZ,
+    errored_at   TIMESTAMPTZ,
+    -- v1.2: reaper bookkeeping. claim_count is the number of times the
+    -- reaper has reclaimed this row from a stuck IN_PROGRESS state.
+    -- error_reason is set when the reaper gives up (e.g. 'stuck-too-many-times').
+    claim_count  INT           NOT NULL DEFAULT 0,
+    error_reason TEXT,
     CONSTRAINT orders_status_check
         CHECK (status IN ('NEW', 'IN_PROGRESS', 'SENT', 'ERROR'))
 );
