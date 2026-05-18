@@ -63,6 +63,24 @@ public class DashboardRoute extends RouteBuilder {
                 .bean("healthChecker", "check")
                 .process(DashboardRoute::renderHealth)
                 .setHeader(Exchange.CONTENT_TYPE, constant(CONTENT_TYPE_HTML));
+
+        // GET /api/reclaim-activity -- HTML fragment with the last-hour
+        //                              reclaim count, the top-5 orders by
+        //                              claim_count, and a 24h sparkline.
+        //                              Three SQL queries run sequentially;
+        //                              each result is stashed as an exchange
+        //                              property so the next .to() can run
+        //                              without clobbering.
+        from("platform-http:/api/reclaim-activity?httpMethodRestrict=GET")
+                .routeId("dashboard-api-reclaim-activity")
+                .to("sql:classpath:sql/dashboard-reclaim-recent-hour.sql?dataSource=#ordersDataSource")
+                .setProperty("reclaimRecentHour", body())
+                .to("sql:classpath:sql/dashboard-reclaim-top5.sql?dataSource=#ordersDataSource")
+                .setProperty("reclaimTop5", body())
+                .to("sql:classpath:sql/dashboard-reclaim-sparkline.sql?dataSource=#ordersDataSource")
+                .setProperty("reclaimSparkline", body())
+                .process(DashboardRoute::renderReclaimActivity)
+                .setHeader(Exchange.CONTENT_TYPE, constant(CONTENT_TYPE_HTML));
     }
 
     // Bridge methods: pull typed inputs out of the exchange, delegate HTML
@@ -95,6 +113,23 @@ public class DashboardRoute extends RouteBuilder {
     private static void renderHealth(Exchange exchange) {
         Map<String, Boolean> health = exchange.getMessage().getBody(Map.class);
         exchange.getMessage().setBody(DashboardRenderer.health(health));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void renderReclaimActivity(Exchange exchange) {
+        List<Map<String, Object>> recentHourRows =
+                (List<Map<String, Object>>) exchange.getProperty("reclaimRecentHour");
+        List<Map<String, Object>> top5 =
+                (List<Map<String, Object>>) exchange.getProperty("reclaimTop5");
+        List<Map<String, Object>> sparkline =
+                (List<Map<String, Object>>) exchange.getProperty("reclaimSparkline");
+
+        long recentHourCount = recentHourRows == null || recentHourRows.isEmpty()
+                ? 0L
+                : ((Number) recentHourRows.get(0).get("n")).longValue();
+
+        exchange.getMessage().setBody(
+                DashboardRenderer.reclaimActivity(recentHourCount, top5, sparkline));
     }
 
     private static String loadResource(String classpathResource) throws IOException {

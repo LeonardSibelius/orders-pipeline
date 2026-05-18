@@ -163,6 +163,107 @@ public final class DashboardRenderer {
                 """.formatted(textClass, dotClass, escape(label));
     }
 
+    public static String reclaimActivity(long recentHourCount,
+                                         List<Map<String, Object>> top5,
+                                         List<Map<String, Object>> sparkline) {
+        String topSection;
+        if (top5 == null || top5.isEmpty()) {
+            topSection = """
+                    <div class="text-slate-500 text-sm">No reclaim activity in the last 24h.</div>
+                    """;
+        } else {
+            topSection = renderReclaimTopTable(top5);
+        }
+
+        return """
+                <div class="rounded-lg border border-slate-700 bg-slate-800/60 p-4 space-y-4">
+                  <div class="flex items-baseline justify-between gap-6">
+                    <div>
+                      <div class="text-xs uppercase tracking-wider text-slate-400">reclaims in the last hour</div>
+                      <div class="text-3xl font-semibold text-slate-100 mt-1 tabular-nums">%d</div>
+                    </div>
+                    <div class="flex-1 max-w-[280px]">
+                %s    </div>
+                  </div>
+                %s</div>
+                """.formatted(recentHourCount, sparklineSvg(sparkline), topSection);
+    }
+
+    private static String sparklineSvg(List<Map<String, Object>> buckets) {
+        if (buckets == null || buckets.isEmpty()) {
+            return flatSparkline();
+        }
+        int n = buckets.size();
+        long[] values = new long[n];
+        long max = 0;
+        for (int i = 0; i < n; i++) {
+            long v = ((Number) buckets.get(i).get("n")).longValue();
+            values[i] = v;
+            if (v > max) max = v;
+        }
+        if (max == 0) {
+            return flatSparkline();
+        }
+        StringBuilder points = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            double x = (240.0 * i) / (n - 1);
+            double y = 35.0 - (values[i] * 30.0 / max);  // 5..35 vertical band
+            if (i > 0) points.append(' ');
+            points.append(String.format("%.1f,%.1f", x, y));
+        }
+        return """
+                <svg viewBox="0 0 240 40" class="w-full h-10 block" aria-label="reclaim events, last 24 hours">
+                  <polyline points="%s" fill="none" stroke="rgb(96,165,250)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+                </svg>
+                """.formatted(points.toString());
+    }
+
+    private static String flatSparkline() {
+        // No reclaims in the 24h window -- dashed baseline communicates
+        // "intentional flat" rather than "broken/empty render."
+        return """
+                <svg viewBox="0 0 240 40" class="w-full h-10 block" aria-label="no reclaim events, last 24 hours">
+                  <line x1="0" y1="35" x2="240" y2="35" stroke="rgb(100,116,139)" stroke-width="1" stroke-dasharray="3,3"/>
+                </svg>
+                """;
+    }
+
+    private static String renderReclaimTopTable(List<Map<String, Object>> rows) {
+        StringBuilder body = new StringBuilder();
+        Instant now = Instant.now();
+        for (Map<String, Object> r : rows) {
+            long id = ((Number) r.get("id")).longValue();
+            String status = String.valueOf(r.get("status"));
+            long claimCount = ((Number) r.get("claim_count")).longValue();
+            Instant claimedAt = toInstant(r.get("claimed_at"));
+            body.append("""
+                          <tr>
+                            <td class="px-3 py-1.5 text-slate-300 tabular-nums">#%d</td>
+                            <td class="px-3 py-1.5">%s</td>
+                            <td class="px-3 py-1.5 text-right text-slate-300 tabular-nums">%d</td>
+                            <td class="px-3 py-1.5 text-right text-slate-400 tabular-nums">%s</td>
+                          </tr>
+                    """.formatted(id, statusBadge(status), claimCount,
+                            claimedAt == null ? "—" : duration(claimedAt, now) + " ago"));
+        }
+        return """
+                <div class="rounded-md border border-slate-700/60 overflow-hidden">
+                  <table class="w-full text-sm">
+                    <thead class="bg-slate-900/40 text-slate-400 text-xs uppercase tracking-wider">
+                      <tr>
+                        <th class="text-left px-3 py-1.5 font-medium">id</th>
+                        <th class="text-left px-3 py-1.5 font-medium">status</th>
+                        <th class="text-right px-3 py-1.5 font-medium">reclaims</th>
+                        <th class="text-right px-3 py-1.5 font-medium">last claim</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/60">
+                %s    </tbody>
+                  </table>
+                </div>
+                """.formatted(body);
+    }
+
     // ---------------------- helpers ----------------------
 
     private static String statusBadge(String status) {

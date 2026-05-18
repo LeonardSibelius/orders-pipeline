@@ -58,6 +58,13 @@
         </div>
     </section>
 
+    <section>
+        <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-3">reclaim activity</h2>
+        <div hx-get="/api/reclaim-activity" hx-trigger="load, every 5s" hx-swap="innerHTML">
+            <div class="text-slate-500 text-sm">loading…</div>
+        </div>
+    </section>
+
 </main>
 
 <script>

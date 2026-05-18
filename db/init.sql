@@ -25,6 +25,24 @@ CREATE TABLE orders (
 CREATE INDEX orders_new_created_at_idx ON orders (created_at)
     WHERE status = 'NEW';
 
+-- v1.3: per-reclaim event log used by the dashboard's Reclaim Activity
+-- panel. The reaper INSERTs one row here on each successful reclaim
+-- (the poison-row path does NOT log -- those are terminations, not
+-- reclaims, so they don't belong in the reclaim history).
+--
+-- Write-once log: no UPDATE/DELETE expected, no FK to orders(id) by
+-- design (cleanup is a v2.x concern alongside real migration tooling).
+CREATE TABLE reclaim_log (
+    id              BIGSERIAL   PRIMARY KEY,
+    order_id        BIGINT      NOT NULL,
+    reclaimed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    new_claim_count INT         NOT NULL
+);
+
+-- Supports both the last-hour count query and the 24-hour sparkline
+-- aggregation (DATE_TRUNC('hour', reclaimed_at) over recent rows).
+CREATE INDEX reclaim_log_reclaimed_at_idx ON reclaim_log (reclaimed_at);
+
 -- Seed rows so `./mvnw camel:run` produces visible Kafka traffic immediately.
 INSERT INTO orders (customer_id, amount, currency) VALUES
     ('cust-001', 49.99,  'USD'),

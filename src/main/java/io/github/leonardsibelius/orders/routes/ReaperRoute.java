@@ -66,7 +66,18 @@ public class ReaperRoute extends RouteBuilder {
             .routeId("orders-reaper-reclaim")
             .to("sql:classpath:sql/reaper-reclaim.sql?dataSource=#ordersDataSource")
             .log(LoggingLevel.WARN,
-                 "Reclaimed row id=${header.orderId} after stuck for ${header.stuckSecs} seconds, claim_count now ${header.newClaimCount}");
+                 "Reclaimed row id=${header.orderId} after stuck for ${header.stuckSecs} seconds, claim_count now ${header.newClaimCount}")
+            // v1.3: record this reclaim in reclaim_log for the dashboard's
+            // Reclaim Activity panel. doTry/doCatch isolates an INSERT
+            // failure so it cannot undo the UPDATE that already succeeded
+            // above -- and we WARN-log the missed event rather than failing
+            // silently. The reclaim happened; the history line did not.
+            .doTry()
+                .to("sql:classpath:sql/reaper-log-reclaim.sql?dataSource=#ordersDataSource")
+            .doCatch(Exception.class)
+                .log(LoggingLevel.WARN,
+                     "Failed to record reclaim event for id=${header.orderId} in reclaim_log: ${exception.message}. The reclaim itself succeeded; the sparkline will be missing this event.")
+            .end();
 
         from("direct:reaper-poison")
             .routeId("orders-reaper-poison")
